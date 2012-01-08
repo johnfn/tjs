@@ -1,4 +1,6 @@
 var util = require('util');
+var LVALUE = 1;
+var RVALUE = 2;
 
 function d(obj) {
   console.log(util.inspect(obj));
@@ -57,12 +59,26 @@ function merge_objects(o1, o2) {
   return copy;
 }
 
+function Local(name, type) {
+  this.name = name;
+  this.type = type;
+  this.assigned = false;
+}
+
+var fn_types = {
+  "console.log" : "*"
+}
+
 function Node(args) {
   this.args = args;
 
   /* Checks to see if the name of the function that we're calling is `form_name` */
   this.form_is = function(form_name) {
     return this.args[0].is_atom() && (this.args[0].contents == form_name);
+  }
+
+  this.form_name = function() {
+    return this.args[0].contents;
   }
 
   this.compile = function() {
@@ -80,7 +96,7 @@ function Node(args) {
     for (var i = 1; i < this.args.length; i += 2) {
       assert(this.args[i].is_atom() && this.args[i + 1].is_atom(), "non-atoms in var statement");
 
-      types[this.args[i].contents] = this.args[i + 1].contents;
+      types[this.args[i].contents] = new Local(this.args[i].contents, this.args[i + 1].contents);
     }
 
     return types;
@@ -102,8 +118,26 @@ function Node(args) {
       typechecks = (this.args[1].type(locals) == this.args[2].type(locals)) && (this.args[1].type(locals) == "string" || this.args[1].type(locals) == "int");
     } else if (this.form_is("-")) {
       typechecks == (this.args[1].type(locals) == this.args[2].type(locals) == "int");
+    } else if (this.form_is("=")) {
+      if (!this.args[1].is_atom()) {
+        console.log ("Assignment to non-atom");
+        throw OhCrap;
+        return undefined;
+      }
+
+      typechecks = (this.args[1].type(locals, LVALUE) == this.args[2].type(locals));
+      locals[this.args[1].contents].assigned = true;
+    } else {
+      typechecks = true;
+      //generic function call
+      for (var i = 1; i < this.args.length; i++) {
+        typechecks = typechecks && (this.args[i].type(locals) == fn_types[this.form_name()] || fn_types[this.form_name()] == "*");
+      }
     }
 
+    if (!typechecks) {
+      console.log("Type checking failure at " + this.tostring());
+    }
     return typechecks;
   }
 
@@ -125,13 +159,22 @@ function Atom(contents) {
     return true;
   }
 
-  this.type = function(locals) {
+  //side indicates whether this atom is an l or r value.
+  this.type = function(locals, side) {
+    side = side || RVALUE;
+
     if (/[0-9\.]/.exec(this.contents)) {
       return "int";
     } else {
       /* identifier */
       if (this.contents in locals) {
-        return locals[this.contents];
+        if (side == RVALUE && !locals[this.contents].assigned) {
+          console.log("Variable " + this.contents + " used possibly before assigned.");
+          throw UnassignedVariableException;
+          return undefined;
+        }
+
+        return locals[this.contents].type;
       } else {
         console.log("Undefined variable " + this.contents);
 
@@ -181,7 +224,7 @@ function parse(tokens) {
   return new Node(forms);
 }
 
-var ast = parse(lex("(do (var i int s string) (+ i s))"));
+var ast = parse(lex("(do (var i int) (console.log i))"));
 
 if (ast.typecheck()) {
   console.log("Type checks!");
