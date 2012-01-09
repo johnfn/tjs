@@ -114,6 +114,9 @@ function Node(args) {
       for (var i = 2; i < this.args.length; i++) {
         typechecks = typechecks && this.args[i].typecheck(locals);
       }
+    } else if (this.form_is("if")) {
+      // This doesn't work because we need to pass information about whether a variable has been assigned through.
+      typechecks = this.args[1].typecheck(locals) && this.args[2].typecheck(locals);
     } else if (this.form_is("+")) {
       typechecks = (this.args[1].type(locals) == this.args[2].type(locals)) && (this.args[1].type(locals) == "string" || this.args[1].type(locals) == "int");
     } else if (this.form_is("-")) {
